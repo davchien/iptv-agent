@@ -261,7 +261,7 @@
       "name": "重庆卫视",
       "group": "卫视",
       "source": "miguvideo",
-      "source_id": "chongqingws",
+      "source_id": "738910914",
       "logo": "https://logo.iqw.asia/chongqing.png",
       "priority": 110
     },
@@ -270,7 +270,7 @@
       "name": "吉林卫视",
       "group": "卫视",
       "source": "miguvideo",
-      "source_id": "jilinws",
+      "source_id": "947472500",
       "logo": "https://logo.iqw.asia/jilin.png",
       "priority": 111
     },
@@ -288,7 +288,7 @@
       "name": "兵团卫视",
       "group": "卫视",
       "source": "miguvideo",
-      "source_id": "bingtuanws",
+      "source_id": "956923145",
       "logo": "https://logo.iqw.asia/bingtuan.png",
       "priority": 113
     }

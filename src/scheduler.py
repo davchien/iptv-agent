@@ -88,6 +88,7 @@ class Scheduler:
             all_channels = await fetch_all_standard_channels(
                 concurrency=channel_concurrency,
                 analyze_streams=analyze,
+                config=self.config,
             )
             total_channels = len(all_channels)
             logger.info(f"标准频道表获取完成: {total_channels} 个频道")
@@ -159,10 +160,17 @@ class Scheduler:
         # ------------------------------------------------------------------
         # 是否跳过测速（直接从 interface.txt 输出，不做连通性检测）
         # ------------------------------------------------------------------
+        # 代理模式自动跳过测速（代理内部实时鉴权）
+        proxy_url = self.config.get("standard_channels", {}).get("migu_proxy_url", "").strip()
         skip_testing = (
             use_standard
-            and self.config.get("standard_channels", {}).get("skip_testing", False)
+            and (
+                bool(proxy_url)
+                or self.config.get("standard_channels", {}).get("skip_testing", False)
+            )
         )
+        if bool(proxy_url):
+            logger.info(f"代理模式: {proxy_url}（跳过测速，代理内部实时鉴权）")
 
         # ------------------------------------------------------------------
         # 清空旧数据，准备存入新的测试结果

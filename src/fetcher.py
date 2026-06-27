@@ -36,78 +36,90 @@ def load_standard_channels() -> List[Dict[str, Any]]:
 async def fetch_all_standard_channels(
     concurrency: int = 5,
     analyze_streams: bool = False,
+    config: Optional[dict] = None,
 ) -> List[ChannelInfo]:
     """
-    从标准频道表 + interface.txt 获取所有频道的直连URL
+    从标准频道表获取频道URL
     
-    流程:
-    1. 从 GitHub 拉取 interface.txt（migu_video 社区输出）
-    2. 解析M3U8格式，提取频道名和URL
-    3. 按标准频道表进行名称匹配
-    4. 返回匹配成功的 ChannelInfo 列表
+    两种模式：
+    1. 代理模式（migu_proxy_url 已配置）：
+       - 直接用 source_id 拼接代理地址 http://proxy:6001/source_id
+       - 不拉取 interface.txt，代理内部实时处理鉴权
+    2. 静态模式（migu_proxy_url 为空）：
+       - 从 interface.txt 拉取静态URL并匹配频道名
+       - URL含过期鉴权参数，换IP后可能失效
     
     Args:
         concurrency: 并发数（保留兼容）
-        analyze_streams: 是否分析流信息（默认关闭，URL已验证可用）
+        analyze_streams: 是否分析流信息
+        config: 完整配置（用于读取 migu_proxy_url）
     
     Returns:
-        ChannelInfo 列表（仅含匹配成功且已认证的官方URL）
+        ChannelInfo 列表
     """
     channels_config = load_standard_channels()
     if not channels_config:
         logger.error("标准频道表为空，无法获取频道列表")
         return []
 
-    logger.info(f"从 interface.txt 拉取最新直播源 (标准频道表: {len(channels_config)} 个)...")
+    # 检查是否启用代理模式
+    if config is None:
+        config = load_config()
+    proxy_url = (
+        config.get("standard_channels", {}).get("migu_proxy_url", "").strip()
+    )
+    
+    if proxy_url:
+        return _fetch_via_proxy(channels_config, proxy_url)
+    else:
+        return await _fetch_via_interface_txt(channels_config, concurrency, analyze_streams)
 
-    # 拉取并解析 interface.txt
-    content = await fetch_interface_txt()
-    if not content:
-        logger.error("无法获取 interface.txt")
-        return []
 
-    m3u_channels = parse_m3u8_content(content)
-    logger.info(f"interface.txt 解析完成: {len(m3u_channels)} 个频道")
-
-    # 按标准频道表匹配
+def _fetch_via_proxy(
+    channels_config: List[Dict[str, Any]],
+    proxy_url: str,
+) -> List[ChannelInfo]:
+    """代理模式：用 source_id 拼接 migu2026 代理地址"""
+    proxy_url = proxy_url.rstrip("/")
     results = []
-    matched = 0
+    skipped = 0
 
     for ch in channels_config:
-        std_name = ch["name"]
-        urls = match_channel(std_name, m3u_channels)
-
-        if urls:
-            info = ChannelInfo(
-                name=ch["name"],
-                url=urls[0],  # 第一个URL（最新）
-                group=ch.get("group", "未分类"),
-                logo=ch.get("logo", ""),
-                channel_id=ch["id"],
-                tvg_id=ch["id"],
-                source="migu_m3u",
+        source_id = ch.get("source_id", "")
+        # 只处理有数字咪咕ID的频道（source_id 为纯数字）
+        if not source_id.isdigit():
+            logger.debug(
+                f"⊘ {ch['name']}: source_id={source_id!r} 非咪咕ID，跳过（需第三方源补充）"
             )
-            info.all_urls = urls  # 所有备用URL
-            results.append(info)
-            matched += 1
-            logger.debug(f"✓ {std_name}: 匹配成功 ({len(urls)} 备用URL)")
-        else:
-            logger.debug(f"✗ {std_name}: interface.txt 中未收录")
+            skipped += 1
+            continue
 
-    logger.info(f"标准频道匹配完成: {matched}/{len(channels_config)} (成功/总数)")
+        info = ChannelInfo(
+            name=ch["name"],
+            url=f"{proxy_url}/{source_id}",
+            group=ch.get("group", "未分类"),
+            logo=ch.get("logo", ""),
+            channel_id=ch["id"],
+            tvg_id=ch["id"],
+            source="migu_proxy",
+        )
+        info.all_urls = [info.url]
+        results.append(info)
+        logger.debug(f"✓ {ch['name']}: {proxy_url}/{source_id}")
 
-    # 可选：分析流信息
-    if analyze_streams and results:
-        from .stream_analyzer import analyze_stream
-        logger.info("分析流信息（分辨率等）...")
-        analyze_tasks = [analyze_stream(ch_info.url, fallback_name=ch_info.name) for ch_info in results]
-        analyses = await asyncio.gather(*analyze_tasks)
-        for ch_info, analysis in zip(results, analyses):
-            if analysis.get("resolution"):
-                ch_info.resolution = f"{analysis['resolution'][0]}x{analysis['resolution'][1]}"
-                ch_info.resolution_label = analysis.get("resolution_label", "")
-
+    logger.info(
+        f"代理模式完成: {len(results)}/{len(channels_config)} 个频道 "
+        f"(跳过 {skipped} 个无咪咕ID)"
+    )
     return results
+
+
+async def _fetch_via_interface_txt(
+    channels_config: List[Dict[str, Any]],
+    concurrency: int = 5,
+    analyze_streams: bool = False,
+) -> List[ChannelInfo]:
+    """静态模式：从 interface.txt 拉取并匹配（旧逻辑）"""
 
 
 async def fetch_and_parse(source_config: dict) -> List[ChannelInfo]:
