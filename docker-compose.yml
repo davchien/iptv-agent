@@ -9,6 +9,8 @@ services:
     environment:
       - IPTVAgent_FULL_UPDATE_INTERVAL=43200
       - IPTVAgent_TEST_TIMEOUT=8
+      - IPTVAgent_TEST_CONCURRENCY=20
+      - IPTVAgent_INTER_CHANNEL_DELAY=0
       - IPTVAgent_SERVER_PORT=8000
       - IPTVAgent_RUN_ON_STARTUP=true
     restart: unless-stopped

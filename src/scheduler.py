@@ -99,42 +99,43 @@ class Scheduler:
         total_channels = len(all_channels)
         logger.info(f"合并后总频道数: {total_channels}")
 
-        # 创建aiohttp session用于批量测试
+        # 创建aiohttp session用于批量并发测试
         connector = aiohttp.TCPConnector(limit=concurrency, ttl_dns_cache=300)
         async with aiohttp.ClientSession(connector=connector) as session:
+            # 分批并发测试
+            import itertools
+            batch_size = concurrency
+            for batch_idx in range(0, total_channels, batch_size):
+                batch = all_channels[batch_idx:batch_idx + batch_size]
+                batch_num = batch_idx // batch_size + 1
+                total_batches = (total_channels + batch_size - 1) // batch_size
 
-            for i, ch in enumerate(all_channels):
-                logger.info(f"[{i+1}/{total_channels}] 测试: {ch.name} ({ch.group})")
+                # 并发测试当前批次
+                tasks = [self._test_one_channel(session, ch, test_timeout) for ch in batch]
+                results = await asyncio.gather(*tasks)
 
-                # 测试所有候选URL，找最优
-                if len(ch.all_urls) > 1:
-                    best_url, latency, reason = await self._test_channel_urls(
-                        session, ch.all_urls, test_timeout
-                    )
-                else:
-                    # _test_single_url 返回 (url, is_valid, latency, reason)
-                    url, is_valid, latency, reason = await self._test_single_url(
-                        session, ch.url, test_timeout
-                    )
-                    best_url = url if is_valid else None
+                # 处理结果
+                for ch, (best_url, latency, reason) in zip(batch, results):
+                    if best_url:
+                        ch.url = best_url
+                        ch.latency = latency
+                        ch.status = "ok"
+                        ch.last_test = datetime.now().isoformat()
+                        updated_channels += 1
+                    else:
+                        ch.status = "failed"
+                        failed_channels += 1
 
-                if best_url:
-                    ch.url = best_url
-                    ch.latency = latency
-                    ch.status = "ok"
-                    ch.last_test = datetime.now().isoformat()
-                    updated_channels += 1
-                    logger.info(f"  ✓ 有效 (延迟 {latency:.0f}ms) [{reason}]")
-                else:
-                    ch.status = "failed"
-                    failed_channels += 1
-                    logger.warning(f"  ✗ 全部失效 [{reason}]")
+                    # 保存到存储
+                    self.store.set(ch)
 
-                # 保存到存储
-                self.store.set(ch)
+                logger.info(
+                    f"批次 {batch_num}/{total_batches} 完成: "
+                    f"{batch_idx + 1}-{min(batch_idx + batch_size, total_channels)}/{total_channels}"
+                )
 
-                # 限流延迟
-                if inter_delay > 0 and i < total_channels - 1:
+                # 批次间短暂延迟（防止限流）
+                if inter_delay > 0 and batch_idx + batch_size < total_channels:
                     await asyncio.sleep(inter_delay)
 
         # 保存 + 生成播放列表
@@ -150,6 +151,19 @@ class Scheduler:
             f"失效 {failed_channels}, "
             f"耗时 {elapsed:.1f}s"
         )
+
+    async def _test_one_channel(
+        self, session, ch, timeout: int
+    ) -> tuple:
+        """
+        测试单个频道（并发使用），静默日志
+        返回: (best_url, latency_ms, reason)
+        """
+        if len(ch.all_urls) > 1:
+            return await self._test_channel_urls(session, ch.all_urls, timeout)
+        else:
+            url, is_valid, latency, reason = await self._test_single_url(session, ch.url, timeout)
+            return (url if is_valid else None, latency, reason)
 
     async def _test_channel_urls(
         self, session, urls: list, timeout: int
