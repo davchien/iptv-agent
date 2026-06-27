@@ -72,6 +72,7 @@ def load_config(config_path: str = None) -> dict:
         "IPTVAgent_TEST_TIMEOUT": ("scheduler", "test_timeout"),
         "IPTVAgent_TEST_CONCURRENCY": ("scheduler", "test_concurrency"),
         "IPTVAgent_INTER_CHANNEL_DELAY": ("scheduler", "inter_channel_delay"),
+        "IPTVAgent_RUN_ON_STARTUP": ("scheduler", "run_on_startup"),
         "IPTVAgent_LOG_LEVEL": ("logging", "level"),
     }
     for env_key, (section, key) in env_overrides.items():
@@ -80,7 +81,12 @@ def load_config(config_path: str = None) -> dict:
             try:
                 val = int(val)
             except ValueError:
-                pass
+                # 布尔值处理
+                v = val.lower()
+                if v in ("true", "yes"):
+                    val = True
+                elif v in ("false", "no"):
+                    val = False
             config.setdefault(section, {})[key] = val
 
     return config
