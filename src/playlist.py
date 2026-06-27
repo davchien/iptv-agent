@@ -57,7 +57,11 @@ def generate_m3u(channels: List[ChannelInfo], output_path: str, config: dict = N
 
         # URL
         if use_redirect:
-            play_url = f"{base_url}/play/{url_safe_encode(ch.channel_id)}"
+            # 咪咕代理频道使用 /live/ 端点（实时鉴权）
+            if ch.source == "migu_proxy":
+                play_url = f"{base_url}/live/{ch.url}"
+            else:
+                play_url = f"{base_url}/play/{url_safe_encode(ch.channel_id)}"
         else:
             play_url = ch.url
         lines.append(play_url)
@@ -86,7 +90,10 @@ def generate_txt(channels: List[ChannelInfo], output_path: str, config: dict = N
             lines.append("-" * 40)
 
         if use_redirect:
-            url = f"{base_url}/play/{url_safe_encode(ch.channel_id)}"
+            if ch.source == "migu_proxy":
+                url = f"{base_url}/live/{ch.url}"
+            else:
+                url = f"{base_url}/play/{url_safe_encode(ch.channel_id)}"
         else:
             url = ch.url
 

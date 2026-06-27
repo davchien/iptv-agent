@@ -160,17 +160,17 @@ class Scheduler:
         # ------------------------------------------------------------------
         # 是否跳过测速（直接从 interface.txt 输出，不做连通性检测）
         # ------------------------------------------------------------------
-        # 代理模式自动跳过测速（代理内部实时鉴权）
-        proxy_url = self.config.get("standard_channels", {}).get("migu_proxy_url", "").strip()
+        # 代理模式自动跳过测速（/live/ 端点实时鉴权）
+        use_proxy = self.config.get("standard_channels", {}).get("use_proxy", True)
         skip_testing = (
             use_standard
             and (
-                bool(proxy_url)
+                use_proxy
                 or self.config.get("standard_channels", {}).get("skip_testing", False)
             )
         )
-        if bool(proxy_url):
-            logger.info(f"代理模式: {proxy_url}（跳过测速，代理内部实时鉴权）")
+        if use_proxy:
+            logger.info("内置代理模式: /live/ 端点实时鉴权（跳过测速）")
 
         # ------------------------------------------------------------------
         # 清空旧数据，准备存入新的测试结果

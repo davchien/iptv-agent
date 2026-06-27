@@ -62,31 +62,34 @@ async def fetch_all_standard_channels(
         logger.error("标准频道表为空，无法获取频道列表")
         return []
 
-    # 检查是否启用代理模式
+    # 检查是否启用代理模式（有咪咕ID的频道走 /live/ 内置代理）
     if config is None:
         config = load_config()
-    proxy_url = (
-        config.get("standard_channels", {}).get("migu_proxy_url", "").strip()
-    )
+    use_proxy = config.get("standard_channels", {}).get("use_proxy", True)
     
-    if proxy_url:
-        return _fetch_via_proxy(channels_config, proxy_url)
+    if use_proxy:
+        return _fetch_via_proxy(channels_config)
     else:
         return await _fetch_via_interface_txt(channels_config, concurrency, analyze_streams)
 
 
 def _fetch_via_proxy(
     channels_config: List[Dict[str, Any]],
-    proxy_url: str,
 ) -> List[ChannelInfo]:
-    """代理模式：用 source_id 拼接 migu2026 代理地址"""
-    proxy_url = proxy_url.rstrip("/")
+    """
+    内置代理模式：用咪咕 source_id 生成频道列表
+
+    URL 存为纯数字 source_id，播放列表生成时自动拼为
+    http://host:port/live/{source_id}，请求时由 main.py 的
+    /live/ 路由实时调用 migu_api.py 鉴权 → 302 重定向。
+
+    无需外部 migu2026 容器，全部内建。
+    """
     results = []
     skipped = 0
 
     for ch in channels_config:
         source_id = ch.get("source_id", "")
-        # 只处理有数字咪咕ID的频道（source_id 为纯数字）
         if not source_id.isdigit():
             logger.debug(
                 f"⊘ {ch['name']}: source_id={source_id!r} 非咪咕ID，跳过（需第三方源补充）"
@@ -96,19 +99,19 @@ def _fetch_via_proxy(
 
         info = ChannelInfo(
             name=ch["name"],
-            url=f"{proxy_url}/{source_id}",
+            url=source_id,              # 存纯数字ID，播放列表生成时拼 /live/{id}
             group=ch.get("group", "未分类"),
             logo=ch.get("logo", ""),
             channel_id=ch["id"],
             tvg_id=ch["id"],
             source="migu_proxy",
         )
-        info.all_urls = [info.url]
+        info.all_urls = [source_id]
         results.append(info)
-        logger.debug(f"✓ {ch['name']}: {proxy_url}/{source_id}")
+        logger.debug(f"✓ {ch['name']}: /live/{source_id}")
 
     logger.info(
-        f"代理模式完成: {len(results)}/{len(channels_config)} 个频道 "
+        f"内置代理模式完成: {len(results)}/{len(channels_config)} 个频道 "
         f"(跳过 {skipped} 个无咪咕ID)"
     )
     return results

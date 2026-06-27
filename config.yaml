@@ -23,11 +23,10 @@ standard_channels:
   analyze_streams: false
   # 跳过测速，直接将 interface.txt 匹配到的频道全部输出（不做连通性检测）
   skip_testing: true
-  # 咪咕代理地址（部署 qqt8520/migu2026 Docker 容器后使用）
-  # docker run -d -p 6001:6001 --name migu2026 qqt8520/migu2026:1.0
-  # 设置后跳过 interface.txt，直接用代理生成实时鉴权流地址
-  # 格式: http://IP:6001，留空则使用 interface.txt 静态URL模式
-  migu_proxy_url: "http://localhost:6001"
+  # 内置代理模式：所有有咪咕 source_id 的频道走 /live/ 端点
+  # iptv-agent 启动时内置 /live/{source_id} 路由，播放器请求时实时鉴权 → 302 重定向
+  # 无需外部容器，全部内建（基于 migu_video 社区的 720p 鉴权逻辑）
+  use_proxy: true
 
 sources:
   # 内置 M3U 源（支持多个）

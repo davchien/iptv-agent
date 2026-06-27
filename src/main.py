@@ -3,6 +3,7 @@ iptv-agent 主入口
 FastAPI 服务：重定向路由 + 健康检查 + 播放列表下载
 """
 import asyncio
+import time
 from pathlib import Path
 from datetime import datetime
 
@@ -16,6 +17,7 @@ from slowapi.errors import RateLimitExceeded
 from .utils import setup_logging, load_config, url_safe_decode
 from .storage import ChannelStore
 from .scheduler import Scheduler
+from .migu_api import fetch_stream_url
 
 logger = setup_logging(load_config().get("logging", {}))
 
@@ -34,6 +36,7 @@ config = load_config()
 # 延迟初始化（在startup事件中完成）
 store = None
 scheduler = None
+http_session: aiohttp.ClientSession = None  # 共享 session，复用连接
 
 # 限流
 limiter = Limiter(
@@ -50,13 +53,17 @@ if config.get("ratelimit", {}).get("enabled", True):
 # ============================================================
 @app.on_event("startup")
 async def startup():
-    global config, store, scheduler
+    global config, store, scheduler, http_session
     print("=== IPTV Agent 启动中 ===")
     logger.info("iptv-agent 启动中...")
     
     # 加载配置
     config = load_config()
     print(f"配置已加载，数据目录: {config.get('output', {}).get('dir', './data')}")
+    
+    # 初始化 HTTP 会话（复用连接）
+    connector = aiohttp.TCPConnector(limit=20, ttl_dns_cache=300)
+    http_session = aiohttp.ClientSession(connector=connector)
     
     # 初始化存储（从磁盘加载已有数据）
     data_dir = config.get("output", {}).get("dir", "./data")
@@ -79,8 +86,12 @@ async def startup():
 
 @app.on_event("shutdown")
 async def shutdown():
+    global http_session
     logger.info("iptv-agent 关闭中...")
-    await scheduler.stop()
+    if scheduler:
+        await scheduler.stop()
+    if http_session:
+        await http_session.close()
 
 
 # ============================================================
@@ -95,6 +106,7 @@ async def root():
         "version": "1.0.0",
         "endpoints": {
             "play": "/play/{channel_name}  - 重定向到频道直连URL",
+            "live": "/live/{channel_id}    - 咪咕鉴权实时代理（内置）",
             "playlist": "/playlist.m3u  - 下载M3U播放列表",
             "playlist_txt": "/playlist.txt  - 下载TXT播放列表",
             "health": "/health  - 健康检查",
@@ -243,6 +255,48 @@ async def get_txt_playlist():
 async def get_groups():
     """获取所有分组"""
     return {"groups": store.get_groups()}
+
+
+# ════════════════════════════════════════════════════════════
+# 咪咕鉴权代理（内置，无需外部容器）
+# ════════════════════════════════════════════════════════════
+
+# 流地址缓存：{channel_id: (expires_at, stream_url)}
+_stream_cache: dict[str, tuple[float, str]] = {}
+CACHE_TTL = 3 * 60 * 60  # 3 小时
+
+
+@app.get("/live/{channel_id}")
+async def live_redirect(request: Request, channel_id: str):
+    """
+    咪咕直播 302 重定向代理
+
+    当播放器请求 /live/608807420 时：
+    1. 检查缓存（3小时有效）
+    2. 调用咪咕 API 实时鉴权获取流地址
+    3. 返回 302 重定向到真实流地址
+
+    无需部署外部 migu2026 容器，iptv-agent 自身完成鉴权。
+    """
+    # 检查缓存
+    cache_entry = _stream_cache.get(channel_id)
+    if cache_entry:
+        expires, cached_url = cache_entry
+        if time.time() < expires:
+            logger.debug(f"使用缓存: {channel_id}")
+            return RedirectResponse(url=cached_url, status_code=302)
+
+    # 实时获取
+    logger.info(f"获取流地址: {channel_id}")
+    stream_url = await fetch_stream_url(http_session, channel_id)
+
+    if not stream_url:
+        raise HTTPException(status_code=502, detail=f"无法获取频道 {channel_id} 的流地址")
+
+    # 写入缓存
+    _stream_cache[channel_id] = (time.time() + CACHE_TTL, stream_url)
+
+    return RedirectResponse(url=stream_url, status_code=302)
 
 
 # ============================================================
