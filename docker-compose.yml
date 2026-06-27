@@ -6,7 +6,8 @@ services:
       - "8000:8000"
     volumes:
       - ./data:/app/data
-      - ./config.yaml:/app/config.yaml:ro   # 允许自定义配置
+      # 如需自定义配置，在当前目录创建 config.yaml 后取消下行注释：
+      # - ./config.yaml:/app/config.yaml:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
