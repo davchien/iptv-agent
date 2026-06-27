@@ -74,6 +74,30 @@ def parse_m3u8_content(content: str) -> Dict[str, List[Tuple[str, str]]]:
     return channels
 
 
+def _url_quality_score(url: str) -> int:
+    """
+    URL 质量评分，分数越低越好（优先选择）。
+    优先级：无鉴权参数 > 简单鉴权 > 复杂鉴权（encrypt+client_ip）
+    """
+    has_encrypt = "encrypt=" in url.lower() and "encrypt=&\"" not in url.lower()
+    has_client_ip = "client_ip=" in url.lower()
+    has_timestamp = "timestamp=" in url.lower()
+
+    if not has_encrypt and not has_client_ip and not has_timestamp:
+        return 0  # 最佳：无鉴权
+    elif not has_encrypt:
+        return 1  # 较好：无 encrypt（仅 timestamp 等）
+    elif has_encrypt and has_client_ip:
+        return 3  # 最差：IP 锁定的过期 URL
+    else:
+        return 2  # 中间
+
+
+def _sort_urls(urls: List[str]) -> List[str]:
+    """按质量排序 URL：优先选无鉴权、无 IP 锁定的"""
+    return sorted(urls, key=_url_quality_score)
+
+
 def match_channel(std_name: str, m3u_channels: Dict[str, List[Tuple[str, str]]]) -> Optional[List[str]]:
     """
     将标准频道名匹配到 M3U 频道
@@ -82,19 +106,22 @@ def match_channel(std_name: str, m3u_channels: Dict[str, List[Tuple[str, str]]])
     1. 标准化后全字匹配
     2. 标准化后包含匹配
     3. 关键词匹配（如 "CCTV-1" 匹配 "CCTV1"）
+
+    返回的 URL 列表按质量排序：无鉴权 URL 在前，IP 锁定的过期 URL 在后
     """
     norm = normalize_name(std_name)
 
     # 策略1: 精确匹配
     if norm in m3u_channels:
-        # 只返回第一个URL（最新的）
         items = m3u_channels[norm]
-        return [url for _, url, _ in items]
+        urls = [url for _, url, _ in items]
+        return _sort_urls(urls)
 
     # 策略2: 包含匹配
     for m3u_norm, items in m3u_channels.items():
         if norm in m3u_norm or m3u_norm in norm:
-            return [url for _, url, _ in items]
+            urls = [url for _, url, _ in items]
+            return _sort_urls(urls)
 
     # 策略3: 关键词匹配
     # 提取数字部分：如 "cctv-1" → "cctv1"
@@ -104,7 +131,8 @@ def match_channel(std_name: str, m3u_channels: Dict[str, List[Tuple[str, str]]])
     for m3u_norm, items in m3u_channels.items():
         m3u_keywords = "".join(w for w in m3u_norm if w.isalnum())
         if keyword_str in m3u_keywords or m3u_keywords in keyword_str:
-            return [url for _, url, _ in items]
+            urls = [url for _, url, _ in items]
+            return _sort_urls(urls)
 
     # 策略4: 中文名缩写匹配
     # 如 "黑龙江卫视" 匹配 "heilongjiang"
@@ -115,7 +143,8 @@ def match_channel(std_name: str, m3u_channels: Dict[str, List[Tuple[str, str]]])
         for m3u_norm, items in m3u_channels.items():
             m3u_cn = "".join(re.findall(r"[\u4e00-\u9fff]+", items[0][2]))
             if cn == m3u_cn:
-                return [url for _, url, _ in items]
+                urls = [url for _, url, _ in items]
+                return _sort_urls(urls)
 
     return None
 

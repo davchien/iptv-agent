@@ -211,6 +211,33 @@ class Scheduler:
         self.store.save()
         await self._generate_playlists()
 
+        # ------------------------------------------------------------------
+        # 自动回退：标准频道表可用率过低 (< 25%) 时，合并第三方源
+        # ------------------------------------------------------------------
+        if use_standard and total_channels > 0:
+            valid_ratio = updated_channels / total_channels
+            if valid_ratio < 0.25:
+                logger.warning(
+                    f"标准频道可用率极低 ({updated_channels}/{total_channels} = {valid_ratio:.0%})，"
+                    f"自动回退到第三方源补充..."
+                )
+                # 新建 session（主 session 已在 async with 外关闭）
+                fb_conn = aiohttp.TCPConnector(limit=channel_concurrency * 2, ttl_dns_cache=300)
+                async with aiohttp.ClientSession(connector=fb_conn) as fb_session:
+                    await self._merge_fallback_sources(
+                        fb_session, all_channels, seen_names=set(ch.name for ch in all_channels),
+                        timeout=test_timeout, test_bytes=test_bytes,
+                        domain_concurrency=domain_concurrency, channel_concurrency=channel_concurrency,
+                        inter_batch_delay=inter_batch_delay,
+                    )
+                # 重新统计
+                updated_channels = sum(1 for ch in all_channels if ch.status == "ok")
+                failed_channels = sum(1 for ch in all_channels if ch.status == "failed")
+                total_channels = len(all_channels)
+                # 重新保存和生成播放列表
+                self.store.save()
+                await self._generate_playlists()
+
         elapsed = time.time() - start_time
         logger.info("=" * 60)
         logger.info(
@@ -220,6 +247,100 @@ class Scheduler:
             f"失效 {failed_channels}, "
             f"耗时 {elapsed:.1f}s"
         )
+
+    async def _merge_fallback_sources(
+        self, session, all_channels: list, seen_names: set,
+        timeout: int, test_bytes: int, domain_concurrency: int,
+        channel_concurrency: int, inter_batch_delay: float,
+    ):
+        """
+        从第三方 M3U 源拉取频道，去重合并，并发测速后补充到 all_channels
+        """
+        sources = self.config.get("sources", [])
+        fallback_channels = []
+        raw_count = 0
+        filtered_count = 0
+
+        for source in sources:
+            if not source.get("enabled", True):
+                continue
+
+            logger.info(f"回退源处理: {source['name']}")
+            channels = await fetch_and_parse(source)
+
+            if not channels:
+                logger.warning(f"回退源 {source['name']} 未获取到任何频道")
+                continue
+
+            raw_count += len(channels)
+
+            for ch in channels:
+                ch.all_urls = filter_urls(ch.all_urls) if ch.all_urls else []
+                if not ch.all_urls:
+                    filtered_count += 1
+                    continue
+                ch.url = ch.all_urls[0]
+
+                ok, reason = filter_channel(ch)
+                if not ok:
+                    filtered_count += 1
+                    continue
+
+                if ch.name not in seen_names:
+                    seen_names.add(ch.name)
+                    fallback_channels.append(ch)
+                else:
+                    for existing in all_channels:
+                        if existing.name == ch.name:
+                            for u in ch.all_urls:
+                                if u not in existing.all_urls:
+                                    existing.all_urls.append(u)
+                            break
+
+            logger.info(f"回退源 {source['name']}: {len(channels)} 条 → 过滤后保留 {len(fallback_channels)}")
+
+        if not fallback_channels:
+            logger.info("回退源无新增频道，无需补充")
+            return
+
+        logger.info(f"回退源合并: {len(fallback_channels)} 个新频道待测速")
+
+        # 分批测速
+        batch_size = channel_concurrency
+        start_idx = len(all_channels)
+        for batch_idx in range(0, len(fallback_channels), batch_size):
+            batch = fallback_channels[batch_idx:batch_idx + batch_size]
+            batch_num = batch_idx // batch_size + 1
+            total_batches = (len(fallback_channels) + batch_size - 1) // batch_size
+
+            tasks = [
+                self._test_one_channel(session, ch, timeout, test_bytes, domain_concurrency)
+                for ch in batch
+            ]
+            results = await asyncio.gather(*tasks)
+
+            for ch, (best_url, latency, reason, quality) in zip(batch, results):
+                if best_url:
+                    ch.url = best_url
+                    ch.latency = latency
+                    ch.status = "ok"
+                    ch.last_test = datetime.now().isoformat()
+                    ch._quality = quality
+                else:
+                    ch.status = "failed"
+
+                self.store.set(ch)
+                all_channels.append(ch)
+
+            logger.info(
+                f"回退批次 {batch_num}/{total_batches} 完成: "
+                f"有效={sum(1 for c in batch if c.status == 'ok')}/{len(batch)}"
+            )
+
+            if inter_batch_delay > 0 and batch_idx + batch_size < len(fallback_channels):
+                await asyncio.sleep(inter_batch_delay)
+
+        logger.info(f"回退源全部测速完成，新增 {len(fallback_channels)} 频道")
 
     async def _test_one_channel(
         self, session, ch, timeout: int, test_bytes: int, domain_concurrency: int
