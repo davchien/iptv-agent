@@ -157,55 +157,75 @@ class Scheduler:
             )
 
         # ------------------------------------------------------------------
+        # 是否跳过测速（直接从 interface.txt 输出，不做连通性检测）
+        # ------------------------------------------------------------------
+        skip_testing = (
+            use_standard
+            and self.config.get("standard_channels", {}).get("skip_testing", False)
+        )
+
+        # ------------------------------------------------------------------
         # 清空旧数据，准备存入新的测试结果
         # ------------------------------------------------------------------
         self.store.clear()
-        logger.info(f"已清空旧数据，准备测试 {total_channels} 个频道")
 
-        # 创建共享 session 用于全量测试
-        connector = aiohttp.TCPConnector(limit=channel_concurrency * 2, ttl_dns_cache=300)
-        async with aiohttp.ClientSession(connector=connector) as session:
-            # 分批并发测试频道
-            batch_size = channel_concurrency
-            for batch_idx in range(0, total_channels, batch_size):
-                batch = all_channels[batch_idx:batch_idx + batch_size]
-                batch_num = batch_idx // batch_size + 1
-                total_batches = (total_channels + batch_size - 1) // batch_size
+        if skip_testing:
+            # 跳过测速：直接标记全部频道为 ok，URL 已在 fetcher 中设定
+            logger.info(f"跳过测速模式: 直接输出 {total_channels} 个频道（未检测连通性）")
+            for ch in all_channels:
+                ch.status = "ok"
+                ch.latency = -1  # 未测试
+                ch.last_test = datetime.now().isoformat()
+                self.store.set(ch)
+            updated_channels = total_channels
+            failed_channels = 0
+        else:
+            logger.info(f"已清空旧数据，准备测试 {total_channels} 个频道")
 
-                # 并发测试当前批次的所有频道（每个频道内部也并发测试所有候选URL）
-                tasks = [
-                    self._test_one_channel(
-                        session, ch, test_timeout, test_bytes, domain_concurrency
+            # 创建共享 session 用于全量测试
+            connector = aiohttp.TCPConnector(limit=channel_concurrency * 2, ttl_dns_cache=300)
+            async with aiohttp.ClientSession(connector=connector) as session:
+                # 分批并发测试频道
+                batch_size = channel_concurrency
+                for batch_idx in range(0, total_channels, batch_size):
+                    batch = all_channels[batch_idx:batch_idx + batch_size]
+                    batch_num = batch_idx // batch_size + 1
+                    total_batches = (total_channels + batch_size - 1) // batch_size
+
+                    # 并发测试当前批次的所有频道（每个频道内部也并发测试所有候选URL）
+                    tasks = [
+                        self._test_one_channel(
+                            session, ch, test_timeout, test_bytes, domain_concurrency
+                        )
+                        for ch in batch
+                    ]
+                    results = await asyncio.gather(*tasks)
+
+                    # 处理结果
+                    for ch, (best_url, latency, reason, quality) in zip(batch, results):
+                        if best_url:
+                            ch.url = best_url
+                            ch.latency = latency
+                            ch.status = "ok"
+                            ch.last_test = datetime.now().isoformat()
+                            # 保存质量信息到 channel 对象（可选）
+                            ch._quality = quality
+                            updated_channels += 1
+                        else:
+                            ch.status = "failed"
+                            failed_channels += 1
+
+                        self.store.set(ch)
+
+                    logger.info(
+                        f"批次 {batch_num}/{total_batches} 完成: "
+                        f"{batch_idx + 1}-{min(batch_idx + batch_size, total_channels)}/{total_channels}, "
+                        f"有效={updated_channels}, 失效={failed_channels}"
                     )
-                    for ch in batch
-                ]
-                results = await asyncio.gather(*tasks)
 
-                # 处理结果
-                for ch, (best_url, latency, reason, quality) in zip(batch, results):
-                    if best_url:
-                        ch.url = best_url
-                        ch.latency = latency
-                        ch.status = "ok"
-                        ch.last_test = datetime.now().isoformat()
-                        # 保存质量信息到 channel 对象（可选）
-                        ch._quality = quality
-                        updated_channels += 1
-                    else:
-                        ch.status = "failed"
-                        failed_channels += 1
-
-                    self.store.set(ch)
-
-                logger.info(
-                    f"批次 {batch_num}/{total_batches} 完成: "
-                    f"{batch_idx + 1}-{min(batch_idx + batch_size, total_channels)}/{total_channels}, "
-                    f"有效={updated_channels}, 失效={failed_channels}"
-                )
-
-                # 批次间延迟（防止触发限流）
-                if inter_batch_delay > 0 and batch_idx + batch_size < total_channels:
-                    await asyncio.sleep(inter_batch_delay)
+                    # 批次间延迟（防止触发限流）
+                    if inter_batch_delay > 0 and batch_idx + batch_size < total_channels:
+                        await asyncio.sleep(inter_batch_delay)
 
         # 保存 + 生成播放列表
         self.store.save()

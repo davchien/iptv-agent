@@ -21,6 +21,8 @@ standard_channels:
     - "https://gh-proxy.com/https://raw.githubusercontent.com/develop202/migu_video/main/interface.txt"
   # 是否分析流信息（分辨率等），推荐关闭以加速首次启动
   analyze_streams: false
+  # 跳过测速，直接将 interface.txt 匹配到的频道全部输出（不做连通性检测）
+  skip_testing: true
 
 sources:
   # 内置 M3U 源（支持多个）
