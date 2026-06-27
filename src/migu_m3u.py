@@ -10,7 +10,7 @@ import asyncio
 import aiohttp
 from typing import Optional, Dict, List, Tuple
 
-from .models import ChannelInfo
+from .storage import ChannelInfo
 from .utils import setup_logging, load_config
 
 logger = setup_logging(load_config().get("logging", {}))
@@ -210,9 +210,9 @@ async def get_channels_for_standard_list(
                 name=ch["name"],
                 group=ch.get("group", "未分类"),
                 url=urls[0],  # 第一个URL（最新）
-                all_urls=urls,  # 所有备用URL
                 logo=ch.get("logo", ""),
             )
+            channel.all_urls = urls  # 所有备用URL
             results.append(channel)
             matched += 1
             logger.debug(f"✓ {std_name}: 匹配成功 ({len(urls)} 个备用URL)")
