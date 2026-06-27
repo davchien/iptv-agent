@@ -8,16 +8,19 @@
 # 标准频道表配置（官方直连基准）
 # =========================================================
 standard_channels:
-  # 是否使用标准频道表（只保留官方直连，忽略 sources 配置）
+  # 是否使用标准频道表（从 migu_video 社区的 interface.txt 获取官方直连）
+  # 启用时直接解析 interface.txt 中的 M3U8 格式，按 standard_channels.json 匹配
+  # 注意: 咪咕API需要 ddCalcu + Wasm 加密，纯Python无法直接调用
+  #       所以我们使用社区已完成的输出 (interface.txt)，而非直接调API
   enabled: true
-  # 标准频道表路径（相对于工作目录）
+  # 标准频道表路径（频道名基准）
   file: "src/standard_channels.json"
-  # 是否从咪咕API获取最新URL
-  fetch_from_api: true
-  # 咪咕API清晰度（2=标清, 3=高清, 4=蓝光）
-  migu_rate_type: 3
-  # 是否分析流信息（分辨率等）
-  analyze_streams: true
+  # interface.txt 拉取地址（社区每天多次更新）
+  m3u_urls:
+    - "https://raw.githubusercontent.com/develop202/migu_video/main/interface.txt"
+    - "https://gh-proxy.com/https://raw.githubusercontent.com/develop202/migu_video/main/interface.txt"
+  # 是否分析流信息（分辨率等），推荐关闭以加速首次启动
+  analyze_streams: false
 
 sources:
   # 内置 M3U 源（支持多个）

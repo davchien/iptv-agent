@@ -1,21 +1,18 @@
 """
 标准频道获取模块
-只从官方渠道获取直连URL，以 standard_channels.json 为唯一基准
-支持：咪咕API、央视CDN、芒果TV、浙江广电等官方源
+从 migu_video 社区的 interface.txt 获取已验证的官方直连URL，
+按 standard_channels.json 进行频道名匹配，无需直接调用咪咕API。
 """
 import asyncio
 import json
 import os
 from typing import List, Optional, Dict, Any
-from urllib.parse import urljoin
 
 import aiohttp
 
 from .utils import setup_logging, load_config
 from .storage import ChannelInfo
-from .miguvideo_api import batch_get_urls as migu_batch_get
-from .miguvideo_api import get_cctv_cdn_url
-from .stream_analyzer import analyze_stream, batch_analyze
+from .migu_m3u import fetch_interface_txt, parse_m3u8_content, match_channel
 
 logger = setup_logging(load_config().get("logging", {}))
 
@@ -36,199 +33,79 @@ def load_standard_channels() -> List[Dict[str, Any]]:
         return []
 
 
-async def fetch_cctv_cdn_channel(channel: Dict) -> Optional[ChannelInfo]:
-    """从央视官方CDN获取央视频道"""
-    source_id = channel.get("source_id", "")
-    url = await get_cctv_cdn_url(source_id)
-    if not url:
-        return None
-
-    return ChannelInfo(
-        name=channel["name"],
-        url=url,
-        group=channel.get("group", "央视"),
-        logo=channel.get("logo", ""),
-        channel_id=channel["id"],
-        tvg_id=channel["id"],
-        source="cctv_cdn",
-    )
-
-
-async def fetch_miguvideo_channel(channel: Dict) -> Optional[ChannelInfo]:
-    """从咪咕API获取频道直连URL"""
-    source_id = channel.get("source_id", "")
-    if not source_id:
-        return None
-
-    url = await __import__("src.miguvideo_api", fromlist=["get_final_url"]).get_final_url(source_id, rate_type=3)
-    if not url:
-        logger.warning(f"咪咕API获取失败: {channel['name']} (pid={source_id})")
-        return None
-
-    return ChannelInfo(
-        name=channel["name"],
-        url=url,
-        group=channel.get("group", "未分类"),
-        logo=channel.get("logo", ""),
-        channel_id=channel["id"],
-        tvg_id=channel["id"],
-        source="miguvideo",
-    )
-
-
-async def fetch_mgtv_channel(channel: Dict) -> Optional[ChannelInfo]:
-    """从芒果TV（湖南卫视官方）获取"""
-    source_id = channel.get("source_id", "")
-    # 芒果TV URL模板（需要从官网或API获取，这里使用观察到的格式）
-    # 实际应该调用芒果TV的API，这里先用模板
-    url = f"http://hlsal-ldvt.qing.mgtv.com/nn_live/nn_x64/{source_id}/index.m3u8"
-    
-    # 验证URL是否可访问
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.head(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
-                if resp.status == 200:
-                    return ChannelInfo(
-                        name=channel["name"],
-                        url=url,
-                        group=channel.get("group", "卫视"),
-                        logo=channel.get("logo", ""),
-                        channel_id=channel["id"],
-                        tvg_id=channel["id"],
-                        source="mgtv",
-                    )
-    except Exception:
-        pass
-
-    logger.warning(f"芒果TV获取失败: {channel['name']}")
-    return None
-
-
-async def fetch_cztv_channel(channel: Dict) -> Optional[ChannelInfo]:
-    """从浙江广电官方CDN获取"""
-    source_id = channel.get("source_id", "")
-    # 浙江广电URL模板
-    url = f"http://ali-xwl.cztv.com/live/channel{source_id}1080Plxw.m3u8"
-    
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.head(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
-                if resp.status == 200:
-                    return ChannelInfo(
-                        name=channel["name"],
-                        url=url,
-                        group=channel.get("group", "卫视"),
-                        logo=channel.get("logo", ""),
-                        channel_id=channel["id"],
-                        tvg_id=channel["id"],
-                        source="cztv",
-                    )
-    except Exception:
-        pass
-
-    logger.warning(f"浙江广电获取失败: {channel['name']}")
-    return None
-
-
-# 来源类型 → 获取函数映射
-SOURCE_FETCHERS = {
-    "miguvideo": fetch_miguvideo_channel,
-    "cctv_cdn": fetch_cctv_cdn_channel,
-    "mgtv": fetch_mgtv_channel,
-    "cztv": fetch_cztv_channel,
-}
-
-
 async def fetch_all_standard_channels(
     concurrency: int = 5,
-    analyze_streams: bool = True,
+    analyze_streams: bool = False,
 ) -> List[ChannelInfo]:
     """
-    从标准频道表获取所有频道的直连URL
+    从标准频道表 + interface.txt 获取所有频道的直连URL
+    
+    流程:
+    1. 从 GitHub 拉取 interface.txt（migu_video 社区输出）
+    2. 解析M3U8格式，提取频道名和URL
+    3. 按标准频道表进行名称匹配
+    4. 返回匹配成功的 ChannelInfo 列表
     
     Args:
-        concurrency: 并发数
-        analyze_streams: 是否分析流信息（分辨率等）
+        concurrency: 并发数（保留兼容）
+        analyze_streams: 是否分析流信息（默认关闭，URL已验证可用）
     
     Returns:
-        ChannelInfo 列表（仅含标准频道）
+        ChannelInfo 列表（仅含匹配成功且已认证的官方URL）
     """
     channels_config = load_standard_channels()
     if not channels_config:
         logger.error("标准频道表为空，无法获取频道列表")
         return []
 
-    # 按来源类型分组，批量获取（咪咕可以批量）
-    migu_pids = []
-    other_channels = []
+    logger.info(f"从 interface.txt 拉取最新直播源 (标准频道表: {len(channels_config)} 个)...")
 
-    for ch in channels_config:
-        source = ch.get("source", "miguvideo")
-        if source == "miguvideo":
-            migu_pids.append((ch["source_id"], ch["name"]))
-            other_channels.append(ch)
-        else:
-            other_channels.append(ch)
+    # 拉取并解析 interface.txt
+    content = await fetch_interface_txt()
+    if not content:
+        logger.error("无法获取 interface.txt")
+        return []
 
-    # 批量从咪咕API获取URL
-    logger.info(f"从咪咕API批量获取 {len(migu_pids)} 个频道...")
-    migu_results = await migu_batch_get(migu_pids, rate_type=3, concurrency=concurrency)
+    m3u_channels = parse_m3u8_content(content)
+    logger.info(f"interface.txt 解析完成: {len(m3u_channels)} 个频道")
 
-    # 构建结果
+    # 按标准频道表匹配
     results = []
-    migu_idx = 0
+    matched = 0
 
     for ch in channels_config:
-        source = ch.get("source", "miguvideo")
-        
-        if source == "miguvideo":
-            pid = ch["source_id"]
-            url = migu_results.get(pid, "")
-            if url:
-                info = ChannelInfo(
-                    name=ch["name"],
-                    url=url,
-                    group=ch.get("group", "未分类"),
-                    logo=ch.get("logo", ""),
-                    channel_id=ch["id"],
-                    tvg_id=ch["id"],
-                    source="miguvideo",
-                )
-                info.all_urls = [url]
-                results.append(info)
-                logger.info(f"✓ {ch['name']}: 咪咕API获取成功")
-            else:
-                logger.warning(f"✗ {ch['name']}: 咪咕API获取失败")
-            migu_idx += 1
+        std_name = ch["name"]
+        urls = match_channel(std_name, m3u_channels)
+
+        if urls:
+            info = ChannelInfo(
+                name=ch["name"],
+                url=urls[0],  # 第一个URL（最新）
+                group=ch.get("group", "未分类"),
+                logo=ch.get("logo", ""),
+                channel_id=ch["id"],
+                tvg_id=ch["id"],
+                source="migu_m3u",
+            )
+            info.all_urls = urls  # 所有备用URL
+            results.append(info)
+            matched += 1
+            logger.debug(f"✓ {std_name}: 匹配成功 ({len(urls)} 备用URL)")
         else:
-            # 其他来源（央视CDN、芒果TV等）
-            fetcher_func = SOURCE_FETCHERS.get(source)
-            if fetcher_func:
-                info = await fetcher_func(ch)
-                if info:
-                    info.all_urls = [info.url]
-                    results.append(info)
-                    logger.info(f"✓ {ch['name']}: {source} 获取成功")
-                else:
-                    logger.warning(f"✗ {ch['name']}: {source} 获取失败")
-            else:
-                logger.warning(f"? {ch['name']}: 未知来源类型 {source}")
+            logger.debug(f"✗ {std_name}: interface.txt 中未收录")
 
-    logger.info(f"标准频道获取完成: 成功 {len(results)}/{len(channels_config)}")
+    logger.info(f"标准频道匹配完成: {matched}/{len(channels_config)} (成功/总数)")
 
-    # 可选：分析流信息（分辨率等）
+    # 可选：分析流信息
     if analyze_streams and results:
+        from .stream_analyzer import analyze_stream
         logger.info("分析流信息（分辨率等）...")
-        analyze_tasks = []
-        for ch_info in results:
-            analyze_tasks.append(analyze_stream(ch_info.url, fallback_name=ch_info.name))
-        
+        analyze_tasks = [analyze_stream(ch_info.url, fallback_name=ch_info.name) for ch_info in results]
         analyses = await asyncio.gather(*analyze_tasks)
         for ch_info, analysis in zip(results, analyses):
             if analysis.get("resolution"):
                 ch_info.resolution = f"{analysis['resolution'][0]}x{analysis['resolution'][1]}"
                 ch_info.resolution_label = analysis.get("resolution_label", "")
-                logger.debug(f"{ch_info.name}: {ch_info.resolution}")
 
     return results
 

@@ -2,7 +2,7 @@
   "_comment": "标准频道与直连对照表 - iptv-agent 基准表",
   "_version": "1.0",
   "_updated": "2026-06-27",
-  "_description": "只保留央视频道、卫视频道、超清频道，全部从官方渠道获取直连",
+  "_description": "从migu_video社区的interface.txt获取，32个精选频道(央视18+卫视14)，全部咪咕/CDN官方直连",
   "channels": [
     {
       "id": "cctv1",
@@ -291,78 +291,6 @@
       "source_id": "bingtuanws",
       "logo": "https://logo.iqw.asia/bingtuan.png",
       "priority": 113
-    },
-    {
-      "id": "henan",
-      "name": "河南卫视",
-      "group": "卫视",
-      "source": "miguvideo",
-      "source_id": "henanws",
-      "logo": "https://logo.iqw.asia/henan.png",
-      "priority": 114
-    },
-    {
-      "id": "heilongjiang",
-      "name": "黑龙江卫视",
-      "group": "卫视",
-      "source": "miguvideo",
-      "source_id": "heilongjiangws",
-      "logo": "https://logo.iqw.asia/heilongjiang.png",
-      "priority": 115
-    },
-    {
-      "id": "sichuan",
-      "name": "四川卫视",
-      "group": "卫视",
-      "source": "miguvideo",
-      "source_id": "sichuanws",
-      "logo": "https://logo.iqw.asia/sichuan.png",
-      "priority": 116
-    },
-    {
-      "id": "anhui",
-      "name": "安徽卫视",
-      "group": "卫视",
-      "source": "miguvideo",
-      "source_id": "anhuiws",
-      "logo": "https://logo.iqw.asia/anhui.png",
-      "priority": 117
-    },
-    {
-      "id": "hebei",
-      "name": "河北卫视",
-      "group": "卫视",
-      "source": "miguvideo",
-      "source_id": "hebeaws",
-      "logo": "https://logo.iqw.asia/hebei.png",
-      "priority": 118
-    },
-    {
-      "id": "tianjin",
-      "name": "天津卫视",
-      "group": "卫视",
-      "source": "miguvideo",
-      "source_id": "tianjinws",
-      "logo": "https://logo.iqw.asia/tianjin.png",
-      "priority": 119
-    },
-    {
-      "id": "shanxi",
-      "name": "山西卫视",
-      "group": "卫视",
-      "source": "miguvideo",
-      "source_id": "shanxiws",
-      "logo": "https://logo.iqw.asia/shanxi.png",
-      "priority": 120
-    },
-    {
-      "id": "shaanxi",
-      "name": "陕西卫视",
-      "group": "卫视",
-      "source": "miguvideo",
-      "source_id": "shaanxiws",
-      "logo": "https://logo.iqw.asia/shaanxi.png",
-      "priority": 121
     }
   ]
 }
