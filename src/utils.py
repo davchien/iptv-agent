@@ -46,7 +46,9 @@ def setup_logging(config: dict) -> logging.Logger:
 
     logger = logging.getLogger("iptv_agent")
     logger.setLevel(level)
-    logger.addHandler(handler)
+    # 避免重复添加handler（每个模块import时都会调用setup_logging）
+    if not logger.handlers:
+        logger.addHandler(handler)
     logger.propagate = False
     return logger
 

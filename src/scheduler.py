@@ -80,6 +80,7 @@ class Scheduler:
 
         # ------------------------------------------------------------------
         # 方式一：使用标准频道表（官方直连基准）
+        # 如果咪咕API不可达，自动回退到第三方源+域名过滤模式
         # ------------------------------------------------------------------
         if use_standard:
             logger.info("使用标准频道表获取官方直连...")
@@ -90,13 +91,16 @@ class Scheduler:
             )
             total_channels = len(all_channels)
             logger.info(f"标准频道表获取完成: {total_channels} 个频道")
-            # 跳过过滤步骤（标准表已内置过滤）
-            filtered_count = 0
+
+            if total_channels == 0:
+                logger.warning("标准频道表获取为空（咪咕API不可达），回退到第三方源+严格过滤模式...")
+                use_standard = False  # 触发回退到方式二
+                # 不直接 return，下面会执行方式二的逻辑
 
         # ------------------------------------------------------------------
-        # 方式二：从配置的 sources 获取（兼容旧逻辑）
+        # 方式二：从配置的 sources 获取（第三方源 + 域名过滤）
         # ------------------------------------------------------------------
-        else:
+        if not use_standard:
             sources = self.config.get("sources", [])
             all_channels = []
             seen_names = set()
