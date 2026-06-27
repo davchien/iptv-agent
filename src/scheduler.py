@@ -15,8 +15,9 @@ import aiohttp
 from .utils import setup_logging, load_config
 from .fetcher import fetch_and_parse
 from .tester import find_best_url, test_url_with_domain_limit
-from .storage import ChannelStore
+from .storage import ChannelStore, ChannelInfo
 from .playlist import generate_m3u, generate_txt
+from .filter import filter_channel, filter_urls, is_official_url
 
 logger = setup_logging(load_config().get("logging", {}))
 
@@ -80,6 +81,8 @@ class Scheduler:
         # 收集所有频道（去重：同名频道合并候选URL）
         all_channels = []
         seen_names = set()
+        raw_count = 0
+        filtered_count = 0
 
         for source in sources:
             if not source.get("enabled", True):
@@ -92,15 +95,28 @@ class Scheduler:
                 logger.warning(f"源 {source['name']} 未获取到任何频道")
                 continue
 
-            # 去重：同名频道合并 all_urls
-            new_count = 0
+            raw_count += len(channels)
+
+            # 过滤：境外排除、地方台非数字排除、非官方域名排除
             for ch in channels:
+                # 先过滤候选 URL，只保留官方域名
+                ch.all_urls = filter_urls(ch.all_urls) if ch.all_urls else [ch.url]
+                if not ch.all_urls:
+                    ch.all_urls = [ch.url]
+                # 重新设定主 URL 为第一个官方 URL
+                ch.url = ch.all_urls[0]
+
+                # 频道级别过滤
+                ok, reason = filter_channel(ch)
+                if not ok:
+                    filtered_count += 1
+                    continue
+
+                # 去重：同名频道合并 all_urls
                 if ch.name not in seen_names:
                     seen_names.add(ch.name)
                     all_channels.append(ch)
-                    new_count += 1
                 else:
-                    # 合并到已有频道
                     for existing in all_channels:
                         if existing.name == ch.name:
                             for u in ch.all_urls:
@@ -108,10 +124,13 @@ class Scheduler:
                                     existing.all_urls.append(u)
                             break
 
-            logger.info(f"源 {source['name']}: {len(channels)} 条，新增 {new_count} 条")
+            logger.info(f"源 {source['name']}: {len(channels)} 条 → 过滤后保留")
 
         total_channels = len(all_channels)
-        logger.info(f"合并后总频道数: {total_channels}")
+        logger.info(
+            f"合并去重后: {total_channels} 个频道 "
+            f"(原始 {raw_count}, 过滤淘汰 {filtered_count})"
+        )
 
         # 创建共享 session 用于全量测试
         connector = aiohttp.TCPConnector(limit=channel_concurrency * 2, ttl_dns_cache=300)
@@ -157,6 +176,9 @@ class Scheduler:
                 # 批次间延迟（防止触发限流）
                 if inter_batch_delay > 0 and batch_idx + batch_size < total_channels:
                     await asyncio.sleep(inter_batch_delay)
+
+        # 清空旧数据，确保过滤后列表干净
+        self.store.clear()
 
         # 保存 + 生成播放列表
         self.store.save()
