@@ -25,6 +25,7 @@ OFFICIAL_DOMAINS = {
     "miguvideo.com",
     "migu.cn",
     "migucloud.com",
+    "cmvideo.cn",
     # 咪咕容器代理
     "iqw.asia",
     # CCTV / 央视频道官方
@@ -37,12 +38,53 @@ OFFICIAL_DOMAINS = {
     "cnr.cn",
     # 浙江广电
     "cztv.com",
+    "cztvcloud.com",
     # 百视通 / 东方明珠
     "bestv.cn",
     # 湖南日报（华声在线）
     "voc.com.cn",
     # 阿里 CDN（熊猫直播等官方源）
     "myalicdn.com",
+    # CGTN CDN
+    "caton.cloud",
+    # 看看直播
+    "kankanlive.com",
+    # 南京广电
+    "nbs.cn",
+    # 无锡广电
+    "thmz.com",
+    # 黑龙江广电
+    "hljtv.com",
+    # 哈尔滨广电
+    "hrbtv.net",
+    # 趣看直播
+    "quklive.com",
+    # 陕西广电
+    "snrtv.com",
+    # 河北长城云
+    "hebyun.com.cn",
+    # 鹤壁广电
+    "hebitv.com",
+    # 河南大象融媒
+    "dxhmt.cn",
+    # 云南广电
+    "yntv.net",
+    # 腾讯视频 CDN
+    "kcdnvip.com",
+    # 重庆广电
+    "cbg.cn",
+    # 江西广电
+    "jxtvcn.com.cn",
+    # 河南广播电台
+    "hndt.com",
+    # 深圳广电
+    "sztv.com.cn",
+    # 山西广电
+    "sxrtv.com",
+    # 中国媒体缓存 CDN
+    "chinamcache.com",
+    # 三沙卫视
+    "ssws.tv",
 }
 
 # ============================================================
@@ -149,9 +191,11 @@ def filter_channel(ch: ChannelInfo) -> Tuple[bool, str]:
     if is_foreign_channel(ch.name, ch.group):
         return False, f"境外频道:{ch.name}"
 
-    # 规则2：地方台只保留数字频道
-    if is_regional_group(ch.group) and not is_digital_channel(ch.name):
-        return False, f"地方台:{ch.name}({ch.group})"
+    # 规则2：卫视频道始终保留（全国性卫星频道，即使分组名为地方台）
+    # 地方台只保留数字频道
+    if "卫视" not in ch.name:
+        if is_regional_group(ch.group) and not is_digital_channel(ch.name):
+            return False, f"地方台:{ch.name}({ch.group})"
 
     # 规则3：URL 必须来自官方域名
     if not is_official_url(ch.url):

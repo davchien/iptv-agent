@@ -100,9 +100,11 @@ class Scheduler:
             # 过滤：境外排除、地方台非数字排除、非官方域名排除
             for ch in channels:
                 # 先过滤候选 URL，只保留官方域名
-                ch.all_urls = filter_urls(ch.all_urls) if ch.all_urls else [ch.url]
+                ch.all_urls = filter_urls(ch.all_urls) if ch.all_urls else []
                 if not ch.all_urls:
-                    ch.all_urls = [ch.url]
+                    # 没有任何官方域名的 URL，直接跳过该频道
+                    filtered_count += 1
+                    continue
                 # 重新设定主 URL 为第一个官方 URL
                 ch.url = ch.all_urls[0]
 
@@ -131,6 +133,10 @@ class Scheduler:
             f"合并去重后: {total_channels} 个频道 "
             f"(原始 {raw_count}, 过滤淘汰 {filtered_count})"
         )
+
+        # 清空旧数据，准备存入新的测试结果
+        self.store.clear()
+        logger.info(f"已清空旧数据，准备测试 {total_channels} 个频道")
 
         # 创建共享 session 用于全量测试
         connector = aiohttp.TCPConnector(limit=channel_concurrency * 2, ttl_dns_cache=300)
@@ -176,9 +182,6 @@ class Scheduler:
                 # 批次间延迟（防止触发限流）
                 if inter_batch_delay > 0 and batch_idx + batch_size < total_channels:
                     await asyncio.sleep(inter_batch_delay)
-
-        # 清空旧数据，确保过滤后列表干净
-        self.store.clear()
 
         # 保存 + 生成播放列表
         self.store.save()
