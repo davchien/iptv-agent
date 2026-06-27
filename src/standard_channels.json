@@ -1,0 +1,368 @@
+{
+  "_comment": "标准频道与直连对照表 - iptv-agent 基准表",
+  "_version": "1.0",
+  "_updated": "2026-06-27",
+  "_description": "只保留央视频道、卫视频道、超清频道，全部从官方渠道获取直连",
+  "channels": [
+    {
+      "id": "cctv1",
+      "name": "CCTV-1 综合",
+      "group": "央视",
+      "source": "miguvideo",
+      "source_id": "608807420",
+      "logo": "https://logo.cctv.com/cctv1.png",
+      "priority": 1
+    },
+    {
+      "id": "cctv2",
+      "name": "CCTV-2 财经",
+      "group": "央视",
+      "source": "miguvideo",
+      "source_id": "631780532",
+      "logo": "https://logo.cctv.com/cctv2.png",
+      "priority": 2
+    },
+    {
+      "id": "cctv3",
+      "name": "CCTV-3 综艺",
+      "group": "央视",
+      "source": "miguvideo",
+      "source_id": "624878271",
+      "logo": "https://logo.cctv.com/cctv3.png",
+      "priority": 3
+    },
+    {
+      "id": "cctv4",
+      "name": "CCTV-4 中文国际",
+      "group": "央视",
+      "source": "miguvideo",
+      "source_id": "631780421",
+      "logo": "https://logo.cctv.com/cctv4.png",
+      "priority": 4
+    },
+    {
+      "id": "cctv5",
+      "name": "CCTV-5 体育",
+      "group": "央视",
+      "source": "miguvideo",
+      "source_id": "641886683",
+      "logo": "https://logo.cctv.com/cctv5.png",
+      "priority": 5
+    },
+    {
+      "id": "cctv5plus",
+      "name": "CCTV-5+ 体育赛事",
+      "group": "央视",
+      "source": "miguvideo",
+      "source_id": "641886773",
+      "logo": "https://logo.cctv.com/cctv5plus.png",
+      "priority": 6
+    },
+    {
+      "id": "cctv6",
+      "name": "CCTV-6 电影",
+      "group": "央视",
+      "source": "miguvideo",
+      "source_id": "624878396",
+      "logo": "https://logo.cctv.com/cctv6.png",
+      "priority": 7
+    },
+    {
+      "id": "cctv7",
+      "name": "CCTV-7 国防军事",
+      "group": "央视",
+      "source": "miguvideo",
+      "source_id": "673168121",
+      "logo": "https://logo.cctv.com/cctv7.png",
+      "priority": 8
+    },
+    {
+      "id": "cctv8",
+      "name": "CCTV-8 电视剧",
+      "group": "央视",
+      "source": "miguvideo",
+      "source_id": "624878356",
+      "logo": "https://logo.cctv.com/cctv8.png",
+      "priority": 9
+    },
+    {
+      "id": "cctv9",
+      "name": "CCTV-9 纪录",
+      "group": "央视",
+      "source": "miguvideo",
+      "source_id": "673168140",
+      "logo": "https://logo.cctv.com/cctv9.png",
+      "priority": 10
+    },
+    {
+      "id": "cctv10",
+      "name": "CCTV-10 科教",
+      "group": "央视",
+      "source": "miguvideo",
+      "source_id": "624878405",
+      "logo": "https://logo.cctv.com/cctv10.png",
+      "priority": 11
+    },
+    {
+      "id": "cctv11",
+      "name": "CCTV-11 戏曲",
+      "group": "央视",
+      "source": "miguvideo",
+      "source_id": "667987558",
+      "logo": "https://logo.cctv.com/cctv11.png",
+      "priority": 12
+    },
+    {
+      "id": "cctv12",
+      "name": "CCTV-12 社会与法",
+      "group": "央视",
+      "source": "miguvideo",
+      "source_id": "673168185",
+      "logo": "https://logo.cctv.com/cctv12.png",
+      "priority": 13
+    },
+    {
+      "id": "cctv13",
+      "name": "CCTV-13 新闻",
+      "group": "央视",
+      "source": "miguvideo",
+      "source_id": "608807423",
+      "logo": "https://logo.cctv.com/cctv13.png",
+      "priority": 14
+    },
+    {
+      "id": "cctv14",
+      "name": "CCTV-14 少儿",
+      "group": "央视",
+      "source": "miguvideo",
+      "source_id": "624878440",
+      "logo": "https://logo.cctv.com/cctv14.png",
+      "priority": 15
+    },
+    {
+      "id": "cctv15",
+      "name": "CCTV-15 音乐",
+      "group": "央视",
+      "source": "miguvideo",
+      "source_id": "673168223",
+      "logo": "https://logo.cctv.com/cctv15.png",
+      "priority": 16
+    },
+    {
+      "id": "cctv16",
+      "name": "CCTV-16 奥林匹克",
+      "group": "央视",
+      "source": "cctv_cdn",
+      "source_id": "cctv16hd",
+      "logo": "https://logo.cctv.com/cctv16.png",
+      "priority": 17
+    },
+    {
+      "id": "cctv17",
+      "name": "CCTV-17 农业农村",
+      "group": "央视",
+      "source": "miguvideo",
+      "source_id": "673168256",
+      "logo": "https://logo.cctv.com/cctv17.png",
+      "priority": 18
+    },
+    {
+      "id": "hunan",
+      "name": "湖南卫视",
+      "group": "卫视",
+      "source": "mgtv",
+      "source_id": "hunanhd",
+      "logo": "https://logo.iqw.asia/hunan.png",
+      "priority": 100
+    },
+    {
+      "id": "zhejiang",
+      "name": "浙江卫视",
+      "group": "卫视",
+      "source": "cztv",
+      "source_id": "zhejiangws",
+      "logo": "https://logo.iqw.asia/zhejiang.png",
+      "priority": 101
+    },
+    {
+      "id": "jiangsu",
+      "name": "江苏卫视",
+      "group": "卫视",
+      "source": "miguvideo",
+      "source_id": "623899368",
+      "logo": "https://logo.iqw.asia/jiangsu.png",
+      "priority": 102
+    },
+    {
+      "id": "dongfang",
+      "name": "东方卫视",
+      "group": "卫视",
+      "source": "miguvideo",
+      "source_id": "651632648",
+      "logo": "https://logo.iqw.asia/dongfang.png",
+      "priority": 103
+    },
+    {
+      "id": "guangdong",
+      "name": "广东卫视",
+      "group": "卫视",
+      "source": "miguvideo",
+      "source_id": "608831231",
+      "logo": "https://logo.iqw.asia/guangdong.png",
+      "priority": 104
+    },
+    {
+      "id": "beijing",
+      "name": "北京卫视",
+      "group": "卫视",
+      "source": "miguvideo",
+      "source_id": "630287636",
+      "logo": "https://logo.iqw.asia/beijing.png",
+      "priority": 105
+    },
+    {
+      "id": "hubei",
+      "name": "湖北卫视",
+      "group": "卫视",
+      "source": "miguvideo",
+      "source_id": "947472496",
+      "logo": "https://logo.iqw.asia/hubei.png",
+      "priority": 106
+    },
+    {
+      "id": "shandong",
+      "name": "山东卫视",
+      "group": "卫视",
+      "source": "miguvideo",
+      "source_id": "shandongws",
+      "logo": "https://logo.iqw.asia/shandong.png",
+      "priority": 107
+    },
+    {
+      "id": "liaoning",
+      "name": "辽宁卫视",
+      "group": "卫视",
+      "source": "miguvideo",
+      "source_id": "630291707",
+      "logo": "https://logo.iqw.asia/liaoning.png",
+      "priority": 108
+    },
+    {
+      "id": "dongnan",
+      "name": "东南卫视",
+      "group": "卫视",
+      "source": "miguvideo",
+      "source_id": "849116810",
+      "logo": "https://logo.iqw.asia/dongnan.png",
+      "priority": 109
+    },
+    {
+      "id": "chongqing",
+      "name": "重庆卫视",
+      "group": "卫视",
+      "source": "miguvideo",
+      "source_id": "chongqingws",
+      "logo": "https://logo.iqw.asia/chongqing.png",
+      "priority": 110
+    },
+    {
+      "id": "jilin",
+      "name": "吉林卫视",
+      "group": "卫视",
+      "source": "miguvideo",
+      "source_id": "jilinws",
+      "logo": "https://logo.iqw.asia/jilin.png",
+      "priority": 111
+    },
+    {
+      "id": "jiangxi",
+      "name": "江西卫视",
+      "group": "卫视",
+      "source": "miguvideo",
+      "source_id": "783847495",
+      "logo": "https://logo.iqw.asia/jiangxi.png",
+      "priority": 112
+    },
+    {
+      "id": "bingtuan",
+      "name": "兵团卫视",
+      "group": "卫视",
+      "source": "miguvideo",
+      "source_id": "bingtuanws",
+      "logo": "https://logo.iqw.asia/bingtuan.png",
+      "priority": 113
+    },
+    {
+      "id": "henan",
+      "name": "河南卫视",
+      "group": "卫视",
+      "source": "miguvideo",
+      "source_id": "henanws",
+      "logo": "https://logo.iqw.asia/henan.png",
+      "priority": 114
+    },
+    {
+      "id": "heilongjiang",
+      "name": "黑龙江卫视",
+      "group": "卫视",
+      "source": "miguvideo",
+      "source_id": "heilongjiangws",
+      "logo": "https://logo.iqw.asia/heilongjiang.png",
+      "priority": 115
+    },
+    {
+      "id": "sichuan",
+      "name": "四川卫视",
+      "group": "卫视",
+      "source": "miguvideo",
+      "source_id": "sichuanws",
+      "logo": "https://logo.iqw.asia/sichuan.png",
+      "priority": 116
+    },
+    {
+      "id": "anhui",
+      "name": "安徽卫视",
+      "group": "卫视",
+      "source": "miguvideo",
+      "source_id": "anhuiws",
+      "logo": "https://logo.iqw.asia/anhui.png",
+      "priority": 117
+    },
+    {
+      "id": "hebei",
+      "name": "河北卫视",
+      "group": "卫视",
+      "source": "miguvideo",
+      "source_id": "hebeaws",
+      "logo": "https://logo.iqw.asia/hebei.png",
+      "priority": 118
+    },
+    {
+      "id": "tianjin",
+      "name": "天津卫视",
+      "group": "卫视",
+      "source": "miguvideo",
+      "source_id": "tianjinws",
+      "logo": "https://logo.iqw.asia/tianjin.png",
+      "priority": 119
+    },
+    {
+      "id": "shanxi",
+      "name": "山西卫视",
+      "group": "卫视",
+      "source": "miguvideo",
+      "source_id": "shanxiws",
+      "logo": "https://logo.iqw.asia/shanxi.png",
+      "priority": 120
+    },
+    {
+      "id": "shaanxi",
+      "name": "陕西卫视",
+      "group": "卫视",
+      "source": "miguvideo",
+      "source_id": "shaanxiws",
+      "logo": "https://logo.iqw.asia/shaanxi.png",
+      "priority": 121
+    }
+  ]
+}

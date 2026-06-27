@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 import aiohttp
 
 from .utils import setup_logging, load_config
-from .fetcher import fetch_and_parse
+from .fetcher import fetch_and_parse, fetch_all_standard_channels
 from .tester import find_best_url, test_url_with_domain_limit
 from .storage import ChannelStore, ChannelInfo
 from .playlist import generate_m3u, generate_txt
@@ -57,17 +57,18 @@ class Scheduler:
     async def full_update(self):
         """
         全量更新：
-        1. 遍历所有启用的源，获取频道列表
-        2. 对每个频道并发测试所有候选URL（按域名限流）
-        3. 按流质量评分选出最优URL
-        4. 更新存储，生成播放列表
+        1. 如果启用了标准频道表，只从官方渠道获取直连URL
+        2. 否则，遍历所有启用的源，获取频道列表
+        3. 对每个频道并发测试所有候选URL（按域名限流）
+        4. 按流质量评分选出最优URL
+        5. 更新存储，生成播放列表
         """
-        sources = self.config.get("sources", [])
+        # 读取配置
+        use_standard = self.config.get("standard_channels", {}).get("enabled", False)
         test_timeout = self.config.get("scheduler", {}).get("test_timeout", 8)
         test_bytes = self.config.get("scheduler", {}).get("test_bytes", 65536)
         channel_concurrency = self.config.get("scheduler", {}).get("test_concurrency", 10)
         domain_concurrency = self.config.get("scheduler", {}).get("domain_concurrency", 2)
-        # 批次间延迟（秒），防止整体请求过快
         inter_batch_delay = self.config.get("scheduler", {}).get("inter_batch_delay", 1.0)
 
         total_channels = 0
@@ -76,65 +77,84 @@ class Scheduler:
 
         start_time = time.time()
         logger.info("=" * 60)
-        logger.info(f"开始全量更新 (频道并发={channel_concurrency}, 域名并发={domain_concurrency})")
 
-        # 收集所有频道（去重：同名频道合并候选URL）
-        all_channels = []
-        seen_names = set()
-        raw_count = 0
-        filtered_count = 0
+        # ------------------------------------------------------------------
+        # 方式一：使用标准频道表（官方直连基准）
+        # ------------------------------------------------------------------
+        if use_standard:
+            logger.info("使用标准频道表获取官方直连...")
+            analyze = self.config.get("standard_channels", {}).get("analyze_streams", True)
+            all_channels = await fetch_all_standard_channels(
+                concurrency=channel_concurrency,
+                analyze_streams=analyze,
+            )
+            total_channels = len(all_channels)
+            logger.info(f"标准频道表获取完成: {total_channels} 个频道")
+            # 跳过过滤步骤（标准表已内置过滤）
+            filtered_count = 0
 
-        for source in sources:
-            if not source.get("enabled", True):
-                continue
+        # ------------------------------------------------------------------
+        # 方式二：从配置的 sources 获取（兼容旧逻辑）
+        # ------------------------------------------------------------------
+        else:
+            sources = self.config.get("sources", [])
+            all_channels = []
+            seen_names = set()
+            raw_count = 0
+            filtered_count = 0
 
-            logger.info(f"处理源: {source['name']}")
-            channels = await fetch_and_parse(source)
-
-            if not channels:
-                logger.warning(f"源 {source['name']} 未获取到任何频道")
-                continue
-
-            raw_count += len(channels)
-
-            # 过滤：境外排除、地方台非数字排除、非官方域名排除
-            for ch in channels:
-                # 先过滤候选 URL，只保留官方域名
-                ch.all_urls = filter_urls(ch.all_urls) if ch.all_urls else []
-                if not ch.all_urls:
-                    # 没有任何官方域名的 URL，直接跳过该频道
-                    filtered_count += 1
-                    continue
-                # 重新设定主 URL 为第一个官方 URL
-                ch.url = ch.all_urls[0]
-
-                # 频道级别过滤
-                ok, reason = filter_channel(ch)
-                if not ok:
-                    filtered_count += 1
+            for source in sources:
+                if not source.get("enabled", True):
                     continue
 
-                # 去重：同名频道合并 all_urls
-                if ch.name not in seen_names:
-                    seen_names.add(ch.name)
-                    all_channels.append(ch)
-                else:
-                    for existing in all_channels:
-                        if existing.name == ch.name:
-                            for u in ch.all_urls:
-                                if u not in existing.all_urls:
-                                    existing.all_urls.append(u)
-                            break
+                logger.info(f"处理源: {source['name']}")
+                channels = await fetch_and_parse(source)
 
-            logger.info(f"源 {source['name']}: {len(channels)} 条 → 过滤后保留")
+                if not channels:
+                    logger.warning(f"源 {source['name']} 未获取到任何频道")
+                    continue
 
-        total_channels = len(all_channels)
-        logger.info(
-            f"合并去重后: {total_channels} 个频道 "
-            f"(原始 {raw_count}, 过滤淘汰 {filtered_count})"
-        )
+                raw_count += len(channels)
 
+                # 过滤：境外排除、地方台非数字排除、非官方域名排除
+                for ch in channels:
+                    # 先过滤候选 URL，只保留官方域名
+                    ch.all_urls = filter_urls(ch.all_urls) if ch.all_urls else []
+                    if not ch.all_urls:
+                        filtered_count += 1
+                        continue
+                    # 重新设定主 URL 为第一个官方 URL
+                    ch.url = ch.all_urls[0]
+
+                    # 频道级别过滤
+                    ok, reason = filter_channel(ch)
+                    if not ok:
+                        filtered_count += 1
+                        continue
+
+                    # 去重：同名频道合并 all_urls
+                    if ch.name not in seen_names:
+                        seen_names.add(ch.name)
+                        all_channels.append(ch)
+                    else:
+                        for existing in all_channels:
+                            if existing.name == ch.name:
+                                for u in ch.all_urls:
+                                    if u not in existing.all_urls:
+                                        existing.all_urls.append(u)
+                                break
+
+                logger.info(f"源 {source['name']}: {len(channels)} 条 → 过滤后保留")
+
+            total_channels = len(all_channels)
+            logger.info(
+                f"合并去重后: {total_channels} 个频道 "
+                f"(原始 {raw_count}, 过滤淘汰 {filtered_count})"
+            )
+
+        # ------------------------------------------------------------------
         # 清空旧数据，准备存入新的测试结果
+        # ------------------------------------------------------------------
         self.store.clear()
         logger.info(f"已清空旧数据，准备测试 {total_channels} 个频道")
 
