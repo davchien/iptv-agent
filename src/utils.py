@@ -66,14 +66,22 @@ def load_config(config_path: str = None) -> dict:
 
     # 环境变量覆盖（IPTVAgent_ 前缀）
     import os
-    for key in ("FULL_UPDATE_INTERVAL", "TEST_TIMEOUT", "SERVER_PORT"):
-        env_key = f"IPTVAgent_{key}"
+    env_overrides = {
+        "IPTVAgent_SERVER_PORT": ("server", "port"),
+        "IPTVAgent_FULL_UPDATE_INTERVAL": ("scheduler", "full_update_interval"),
+        "IPTVAgent_TEST_TIMEOUT": ("scheduler", "test_timeout"),
+        "IPTVAgent_TEST_CONCURRENCY": ("scheduler", "test_concurrency"),
+        "IPTVAgent_INTER_CHANNEL_DELAY": ("scheduler", "inter_channel_delay"),
+        "IPTVAgent_LOG_LEVEL": ("logging", "level"),
+    }
+    for env_key, (section, key) in env_overrides.items():
         if env_key in os.environ:
-            section = key.split("_")[0].lower()
-            if section == "server":
-                config["server"]["port"] = int(os.environ[env_key])
-            else:
-                config[section][key.split("_", 1)[1].lower()] = int(os.environ[env_key])
+            val = os.environ[env_key]
+            try:
+                val = int(val)
+            except ValueError:
+                pass
+            config.setdefault(section, {})[key] = val
 
     return config
 
