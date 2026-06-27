@@ -71,22 +71,33 @@ def load_config(config_path: str = None) -> dict:
         "IPTVAgent_FULL_UPDATE_INTERVAL": ("scheduler", "full_update_interval"),
         "IPTVAgent_TEST_TIMEOUT": ("scheduler", "test_timeout"),
         "IPTVAgent_TEST_CONCURRENCY": ("scheduler", "test_concurrency"),
+        "IPTVAgent_TEST_BYTES": ("scheduler", "test_bytes"),
+        "IPTVAgent_DOMAIN_CONCURRENCY": ("scheduler", "domain_concurrency"),
         "IPTVAgent_INTER_CHANNEL_DELAY": ("scheduler", "inter_channel_delay"),
+        "IPTVAgent_INTER_BATCH_DELAY": ("scheduler", "inter_batch_delay"),
         "IPTVAgent_RUN_ON_STARTUP": ("scheduler", "run_on_startup"),
         "IPTVAgent_LOG_LEVEL": ("logging", "level"),
     }
     for env_key, (section, key) in env_overrides.items():
         if env_key in os.environ:
             val = os.environ[env_key]
-            try:
-                val = int(val)
-            except ValueError:
-                # 布尔值处理
-                v = val.lower()
-                if v in ("true", "yes"):
-                    val = True
-                elif v in ("false", "no"):
-                    val = False
+            # 根据配置中现有值的类型自动转换
+            current = config.get(section, {}).get(key)
+            if isinstance(current, bool):
+                val = val.lower() in ("true", "1", "yes", "on")
+            elif isinstance(current, int):
+                try:
+                    val = int(val)
+                except ValueError:
+                    logger.warning(f"环境变量 {env_key}={val} 无法转为整数，已跳过")
+                    continue
+            elif isinstance(current, float):
+                try:
+                    val = float(val)
+                except ValueError:
+                    logger.warning(f"环境变量 {env_key}={val} 无法转为浮点数，已跳过")
+                    continue
+            # string 类型无需转换
             config.setdefault(section, {})[key] = val
 
     return config

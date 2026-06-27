@@ -1,17 +1,20 @@
 """
 定时更新任务模块
 定期拉取源、测试URL、生成播放列表
+
+优化版：并发测试所有候选URL，按流质量评分选最优，按域名限流防止触发限流
 """
 import asyncio
 import time
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 import aiohttp
 
 from .utils import setup_logging, load_config
 from .fetcher import fetch_and_parse
-from .tester import find_best_url, test_url
+from .tester import find_best_url, test_url_with_domain_limit
 from .storage import ChannelStore
 from .playlist import generate_m3u, generate_txt
 
@@ -54,14 +57,17 @@ class Scheduler:
         """
         全量更新：
         1. 遍历所有启用的源，获取频道列表
-        2. 对每个频道测试URL有效性
-        3. 更新存储
-        4. 生成播放列表
+        2. 对每个频道并发测试所有候选URL（按域名限流）
+        3. 按流质量评分选出最优URL
+        4. 更新存储，生成播放列表
         """
         sources = self.config.get("sources", [])
         test_timeout = self.config.get("scheduler", {}).get("test_timeout", 8)
-        inter_delay = self.config.get("scheduler", {}).get("inter_channel_delay", 5)
-        concurrency = self.config.get("scheduler", {}).get("test_concurrency", 10)
+        test_bytes = self.config.get("scheduler", {}).get("test_bytes", 65536)
+        channel_concurrency = self.config.get("scheduler", {}).get("test_concurrency", 10)
+        domain_concurrency = self.config.get("scheduler", {}).get("domain_concurrency", 2)
+        # 批次间延迟（秒），防止整体请求过快
+        inter_batch_delay = self.config.get("scheduler", {}).get("inter_batch_delay", 1.0)
 
         total_channels = 0
         updated_channels = 0
@@ -69,9 +75,9 @@ class Scheduler:
 
         start_time = time.time()
         logger.info("=" * 60)
-        logger.info("开始全量更新")
+        logger.info(f"开始全量更新 (频道并发={channel_concurrency}, 域名并发={domain_concurrency})")
 
-        # 收集所有频道（去重：同名频道只保留第一个源的）
+        # 收集所有频道（去重：同名频道合并候选URL）
         all_channels = []
         seen_names = set()
 
@@ -86,57 +92,71 @@ class Scheduler:
                 logger.warning(f"源 {source['name']} 未获取到任何频道")
                 continue
 
-            # 去重：只添加未出现过的频道名
+            # 去重：同名频道合并 all_urls
             new_count = 0
             for ch in channels:
                 if ch.name not in seen_names:
                     seen_names.add(ch.name)
                     all_channels.append(ch)
                     new_count += 1
+                else:
+                    # 合并到已有频道
+                    for existing in all_channels:
+                        if existing.name == ch.name:
+                            for u in ch.all_urls:
+                                if u not in existing.all_urls:
+                                    existing.all_urls.append(u)
+                            break
 
             logger.info(f"源 {source['name']}: {len(channels)} 条，新增 {new_count} 条")
 
         total_channels = len(all_channels)
         logger.info(f"合并后总频道数: {total_channels}")
 
-        # 创建aiohttp session用于批量并发测试
-        connector = aiohttp.TCPConnector(limit=concurrency, ttl_dns_cache=300)
+        # 创建共享 session 用于全量测试
+        connector = aiohttp.TCPConnector(limit=channel_concurrency * 2, ttl_dns_cache=300)
         async with aiohttp.ClientSession(connector=connector) as session:
-            # 分批并发测试
-            import itertools
-            batch_size = concurrency
+            # 分批并发测试频道
+            batch_size = channel_concurrency
             for batch_idx in range(0, total_channels, batch_size):
                 batch = all_channels[batch_idx:batch_idx + batch_size]
                 batch_num = batch_idx // batch_size + 1
                 total_batches = (total_channels + batch_size - 1) // batch_size
 
-                # 并发测试当前批次
-                tasks = [self._test_one_channel(session, ch, test_timeout) for ch in batch]
+                # 并发测试当前批次的所有频道（每个频道内部也并发测试所有候选URL）
+                tasks = [
+                    self._test_one_channel(
+                        session, ch, test_timeout, test_bytes, domain_concurrency
+                    )
+                    for ch in batch
+                ]
                 results = await asyncio.gather(*tasks)
 
                 # 处理结果
-                for ch, (best_url, latency, reason) in zip(batch, results):
+                for ch, (best_url, latency, reason, quality) in zip(batch, results):
                     if best_url:
                         ch.url = best_url
                         ch.latency = latency
                         ch.status = "ok"
                         ch.last_test = datetime.now().isoformat()
+                        # 保存质量信息到 channel 对象（可选）
+                        ch._quality = quality
                         updated_channels += 1
                     else:
                         ch.status = "failed"
                         failed_channels += 1
 
-                    # 保存到存储
                     self.store.set(ch)
 
                 logger.info(
                     f"批次 {batch_num}/{total_batches} 完成: "
-                    f"{batch_idx + 1}-{min(batch_idx + batch_size, total_channels)}/{total_channels}"
+                    f"{batch_idx + 1}-{min(batch_idx + batch_size, total_channels)}/{total_channels}, "
+                    f"有效={updated_channels}, 失效={failed_channels}"
                 )
 
-                # 批次间短暂延迟（防止限流）
-                if inter_delay > 0 and batch_idx + batch_size < total_channels:
-                    await asyncio.sleep(inter_delay)
+                # 批次间延迟（防止触发限流）
+                if inter_batch_delay > 0 and batch_idx + batch_size < total_channels:
+                    await asyncio.sleep(inter_batch_delay)
 
         # 保存 + 生成播放列表
         self.store.save()
@@ -153,96 +173,49 @@ class Scheduler:
         )
 
     async def _test_one_channel(
-        self, session, ch, timeout: int
+        self, session, ch, timeout: int, test_bytes: int, domain_concurrency: int
     ) -> tuple:
         """
-        测试单个频道（并发使用），静默日志
-        返回: (best_url, latency_ms, reason)
+        测试单个频道的所有候选URL，返回最优结果
+        返回: (best_url, latency_ms, reason, quality_dict)
         """
-        if len(ch.all_urls) > 1:
-            return await self._test_channel_urls(session, ch.all_urls, timeout)
-        else:
-            url, is_valid, latency, reason = await self._test_single_url(session, ch.url, timeout)
-            return (url if is_valid else None, latency, reason)
+        if len(ch.all_urls) <= 1:
+            # 只有一个URL，直接测试
+            url, ok, latency, reason, quality = await test_url_with_domain_limit(
+                ch.url, session, timeout, domain_concurrency, test_bytes
+            )
+            return (url if ok else None, latency, reason, quality)
 
-    async def _test_channel_urls(
-        self, session, urls: list, timeout: int
-    ) -> tuple:
-        """
-        测试多个URL，返回最优的那个
-        返回: (best_url, latency_ms, reason) 或 (None, -1, reason)
-        """
-        results = []
-        for url in urls:
-            url_result, ok, latency, reason = await self._test_single_url(session, url, timeout)
-            results.append((url, ok, latency, reason))
+        # 多个候选URL：并发测试所有，按质量评分选最优
+        results = await self._test_all_urls(
+            session, ch.all_urls, timeout, test_bytes, domain_concurrency
+        )
 
-        # 按延迟排序，取最快的有效URL
-        valid = [(url, latency, reason) for url, ok, latency, reason in results if ok]
+        # 按评分排序取最优
+        valid = [r for r in results if r[1]]  # r[1] = is_valid
         if valid:
-            valid.sort(key=lambda x: x[1])
-            return valid[0][0], valid[0][1], valid[0][2]
+            # 用与 tester.py 相同的评分逻辑
+            from .tester import _score_url
+            valid.sort(key=lambda r: _score_url((r[0], r[1], r[2], r[3], r[4])), reverse=True)
+            best_url, _, latency, reason, quality = valid[0]
+            return best_url, latency, reason, quality
 
         # 全部失败
         reasons = [r[3] for r in results]
-        return None, -1, "; ".join(reasons)
+        return None, -1, "; ".join(reasons), {}
 
-    async def _test_single_url(
-        self, session, url: str, timeout: int
-    ) -> tuple:
+    async def _test_all_urls(
+        self, session, urls: list, timeout: int, test_bytes: int, domain_concurrency: int
+    ) -> list:
         """
-        测试单个URL
-        返回: (url, is_valid, latency_ms, reason)
+        并发测试一个频道的所有候选URL（带域名限流）
+        返回: list of (url, is_valid, latency_ms, reason, quality_dict)
         """
-        reason = ""
-        try:
-            start = time.time()
-            async with session.head(
-                url,
-                timeout=aiohttp.ClientTimeout(total=timeout),
-                allow_redirects=True,
-            ) as resp:
-                latency = (time.time() - start) * 1000
-
-                if resp.status in (200, 301, 302, 303, 307, 308):
-                    ct = resp.headers.get("Content-Type", "").lower()
-                    # 流媒体类型或直接重定向都算有效
-                    if any(t in ct for t in ["video", "audio", "mpegurl", "x-mpegurl", "octet-stream", "stream", "flv"]):
-                        return url, True, latency, f"OK ({ct[:30]})"
-                    if resp.status in (301, 302, 303, 307, 308):
-                        return url, True, latency, f"Redirect (HTTP {resp.status})"
-                    # 200但类型不明，尝试读取少量数据
-                    if resp.status == 200:
-                        return await self._test_with_get(session, url, timeout, latency)
-                    return url, True, latency, f"OK (HTTP {resp.status})"
-                else:
-                    reason = f"HTTP {resp.status}"
-                    return url, False, latency, reason
-
-        except asyncio.TimeoutError:
-            return url, False, timeout * 1000, "Timeout"
-        except aiohttp.ClientError as e:
-            return url, False, -1, f"ClientError: {str(e)[:50]}"
-        except Exception as e:
-            return url, False, -1, f"Error: {str(e)[:50]}"
-
-    async def _test_with_get(
-        self, session, url: str, timeout: int, head_latency: float
-    ) -> tuple:
-        """GET请求读取少量数据确认"""
-        try:
-            async with session.get(
-                url,
-                timeout=aiohttp.ClientTimeout(total=timeout),
-                allow_redirects=True,
-            ) as resp:
-                if resp.status == 200:
-                    chunk = await resp.content.read(1024)
-                    if chunk:
-                        return url, True, head_latency, f"OK (data {len(chunk)}B)"
-                return url, True, head_latency, f"OK (HTTP {resp.status})"
-        except Exception as e:
-            return url, False, -1, f"GET Error: {str(e)[:50]}"
+        tasks = [
+            test_url_with_domain_limit(url, session, timeout, domain_concurrency, test_bytes)
+            for url in urls
+        ]
+        return await asyncio.gather(*tasks)
 
     async def _generate_playlists(self):
         """生成M3U和TXT播放列表"""
@@ -275,11 +248,13 @@ class Scheduler:
         if not ch:
             return False
 
-        connector = aiohttp.TCPConnector(limit=5)
-        async with aiohttp.ClientSession(connector=connector) as session:
-            best_url, latency, reason = await self._test_channel_urls(
-                session, ch.all_urls, self.config.get("scheduler", {}).get("test_timeout", 8)
-            )
+        config = self.config.get("scheduler", {})
+        best_url, latency, reason, quality = await find_best_url(
+            ch.all_urls,
+            timeout=config.get("test_timeout", 8),
+            concurrency=config.get("test_concurrency", 10),
+            domain_concurrency=config.get("domain_concurrency", 2),
+        )
 
         if best_url:
             ch.url = best_url

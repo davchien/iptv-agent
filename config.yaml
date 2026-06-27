@@ -38,14 +38,20 @@ sources:
 scheduler:
   # 全量更新周期（秒）
   full_update_interval: 43200  # 12小时
-  # 频道间更新间隔（秒），防止被限流
-  inter_channel_delay: 5
-  # 启动时是否立即执行一次全量更新（设为false可加快启动速度）
-  run_on_startup: false
-  # 并发测试数量（同时测试几个URL）
+  # 启动时是否立即执行一次全量更新
+  run_on_startup: true
+  # 并发测试频道数（同时测试几个频道）
   test_concurrency: 10
-  # URL有效性测试超时（秒）
+  # 同域名并发限制（防止触发限流，推荐2-3）
+  domain_concurrency: 2
+  # 每个URL测试超时（秒）
   test_timeout: 8
+  # 每个URL测速读取字节数（0=不测速，65536=64KB）
+  test_bytes: 65536
+  # 批次间延迟（秒），进一步降低限流风险
+  inter_batch_delay: 1.0
+  # 频道间延迟（秒），0=无延迟（已有域名限流保护）
+  inter_channel_delay: 0
 
 # ============================================================
 # 重定向服务配置

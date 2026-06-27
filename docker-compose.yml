@@ -7,11 +7,23 @@ services:
     volumes:
       - ./data:/app/data
     environment:
+      # 全量更新间隔（秒）
       - IPTVAgent_FULL_UPDATE_INTERVAL=43200
+      # 单URL测试超时（秒）
       - IPTVAgent_TEST_TIMEOUT=8
-      - IPTVAgent_TEST_CONCURRENCY=20
+      # 同时测试的频道数
+      - IPTVAgent_TEST_CONCURRENCY=10
+      # 同域名最大并发（防止限流，咪咕建议2）
+      - IPTVAgent_DOMAIN_CONCURRENCY=2
+      # 测速读取字节数（64KB，0=不测速）
+      - IPTVAgent_TEST_BYTES=65536
+      # 批次间延迟（秒）
+      - IPTVAgent_INTER_BATCH_DELAY=1
+      # 频道间延迟（秒），0=无延迟
       - IPTVAgent_INTER_CHANNEL_DELAY=0
+      # 服务端口
       - IPTVAgent_SERVER_PORT=8000
+      # 启动时自动全量更新
       - IPTVAgent_RUN_ON_STARTUP=true
     restart: unless-stopped
     healthcheck:
