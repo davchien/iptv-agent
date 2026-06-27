@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.log
+
+# 运行时数据（由服务生成，不应提交）
+data/
+server.log
+test_output.log
+
+# 测试文件
+test_*.py
+*_test.py
+
+# 临时配置
+config_temp.yaml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 环境变量
+.env

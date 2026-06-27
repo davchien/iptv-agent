@@ -1,0 +1,6 @@
+fastapi>=0.104.0
+uvicorn>=0.24.0
+aiohttp>=3.9.0
+pyyaml>=6.0
+slowapi>=0.1.9
+pypinyin>=0.50.0  # 可选，用于中文转拼音

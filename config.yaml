@@ -1,0 +1,100 @@
+# iptv-agent 配置文件
+# 所有时间单位：秒（除非另有说明）
+
+# ============================================================
+# 源频道列表配置
+# ============================================================
+sources:
+  # 内置 M3U 源（支持多个）
+  - name: "咪咕官方频道列表"
+    type: "m3u"
+    url: "https://raw.githubusercontent.com/develop202/migu_video/main/interface.txt"
+    enabled: true
+    update_interval: 43200  # 12小时，单位：秒
+
+  - name: "ChinaIPTV 自动更新"
+    type: "m3u"
+    url: "https://raw.githubusercontent.com/hujingguang/ChinaIPTV/main/cnTV_AutoUpdate.m3u8"
+    enabled: true
+    update_interval: 43200
+
+  - name: "vbskycn IPTV"
+    type: "m3u"
+    url: "https://raw.githubusercontent.com/vbskycn/iptv/refs/heads/master/tv/iptv4.m3u"
+    enabled: true
+    update_interval: 43200
+
+  # 网页抓取源（动态获取直连URL）
+  - name: "网页抓取示例"
+    type: "web_scrape"
+    url: ""  # 留空则禁用，填写目标页面URL启用
+    selector: ""  # CSS选择器或正则表达式
+    enabled: false
+    update_interval: 86400  # 24小时
+
+# ============================================================
+# 频道更新配置
+# ============================================================
+scheduler:
+  # 全量更新周期（秒）
+  full_update_interval: 43200  # 12小时
+  # 频道间更新间隔（秒），防止被限流
+  inter_channel_delay: 5
+  # 启动时是否立即执行一次全量更新（设为false可加快启动速度）
+  run_on_startup: false
+  # 并发测试数量（同时测试几个URL）
+  test_concurrency: 10
+  # URL有效性测试超时（秒）
+  test_timeout: 8
+
+# ============================================================
+# 重定向服务配置
+# ============================================================
+server:
+  host: "0.0.0.0"
+  port: 8000
+  # 路由前缀
+  route_prefix: ""
+
+# ============================================================
+# 限流配置（防止滥用）
+# ============================================================
+ratelimit:
+  # 每个IP每秒最大请求数（令牌桶算法）
+  requests_per_second: 2
+  # 令牌桶容量
+  bucket_capacity: 5
+  # 是否启用限流
+  enabled: true
+
+# ============================================================
+# 输出配置
+# ============================================================
+output:
+  # 输出目录（相对于工作目录）
+  dir: "./data"
+  # M3U 文件名
+  m3u_filename: "playlist.m3u"
+  # TXT 文件名
+  txt_filename: "playlist.txt"
+  # 是否按分组排序
+  sort_by_group: true
+  # 是否只输出有效频道
+  only_valid: true
+
+# ============================================================
+# 日志配置
+# ============================================================
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  format: "json"  # json 或 text
+  file: ""  # 留空则输出到stdout
+
+# ============================================================
+# 安全配置
+# ============================================================
+security:
+  # API密钥（可选，留空则不验证）
+  api_key: ""
+  # IP白名单（可选，留空则允许所有）
+  ip_whitelist: []
